@@ -32,14 +32,16 @@ pub async fn get_game(
     global_data: Data<GlobalState>,
     query: Query<GetGameQuery>,
 ) -> Response<Game> {
-    let Ok(result) = global_data.get_api(query.id).await else {
-        return Response::error(
-            "could not find the specified game".into(),
-            StatusCode::NOT_FOUND,
-        );
-    };
+    let game_res = global_data
+        .steamgriddb_service()
+        .get_game_by_id(query.id)
+        .await;
 
-    let mut game: Game = result.into();
+    if game_res.is_err() {
+        return Response::error("failed to fetch game".into(), StatusCode::NOT_FOUND);
+    }
+
+    let mut game = game_res.unwrap();
 
     let service = global_data.steamgriddb_service();
     if query.include_logo.unwrap_or(false) {

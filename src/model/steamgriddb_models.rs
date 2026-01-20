@@ -3,6 +3,20 @@
 use serde::Deserialize;
 
 #[derive(Deserialize)]
+pub struct GameResponseData {
+    pub id: usize,
+    pub name: String,
+    pub types: Vec<String>,
+    pub verified: bool,
+}
+
+#[derive(Deserialize)]
+pub struct GetGameResponse {
+    pub success: bool,
+    pub data: GameResponseData,
+}
+
+#[derive(Deserialize)]
 pub struct HeroesResponse {
     pub success: bool,
     page: u32,

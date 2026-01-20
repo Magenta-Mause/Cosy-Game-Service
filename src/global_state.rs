@@ -40,12 +40,6 @@ impl GlobalState {
         self.steamgriddb_api_client.search(query).await
     }
 
-    pub async fn get_api(&self, game_id: usize) -> Result<GameInfo, Box<dyn Error>> {
-        self.steamgriddb_api_client
-            .get_game_info_for_id(game_id)
-            .await
-    }
-
     pub fn steamgriddb_service(&self) -> SteamgriddbService {
         SteamgriddbService::new(
             self.steamgriddb_api_client.clone(),

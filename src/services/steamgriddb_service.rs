@@ -1,9 +1,12 @@
 use std::error::Error;
 use std::sync::Arc;
 
-use reqwest::Client as ReqwestClient;
+use reqwest::{Client as ReqwestClient, StatusCode};
 
-use crate::steamgriddb_models;
+use crate::{
+    steamgriddb_models::{self, GetGameResponse},
+    Game,
+};
 
 pub struct SteamgriddbService {
     sg_client: Arc<steamgriddb_api::client::Client>,
@@ -31,6 +34,37 @@ impl SteamgriddbService {
         self.sg_client
             .get_images_for_id(game_id, &steamgriddb_api::QueryType::Grid(None))
             .await
+    }
+
+    pub async fn get_game_by_id(&self, game_id: usize) -> Result<Game, Box<dyn Error>> {
+        let game_url = format!("{}/games/id/{}", self.base_url, game_id);
+        let game_res = self.req_client.get(game_url).send().await?;
+
+        if game_res.status() == StatusCode::NOT_FOUND {
+            return Err("game not found".into());
+        }
+
+        if !game_res.status().is_success() {
+            let error_msg = game_res.status().to_string();
+
+            return Err(<Box<dyn Error>>::from(format!(
+                "failed to fetch game: {}",
+                error_msg
+            )));
+        };
+
+        let game_res_json: GetGameResponse = serde_json::from_str(&game_res.text().await?)?;
+
+        if !game_res_json.success {
+            return Err("steamgriddb API returned success=false for game".into());
+        }
+
+        Ok(Game {
+            id: game_res_json.data.id,
+            name: game_res_json.data.name,
+            logo_url: None,
+            hero_url: None,
+        })
     }
 
     pub async fn get_first_logo_by_game_id(
