@@ -6,12 +6,34 @@
 [![CI](https://github.com/Magenta-Mause/Cosy-Game-Service/actions/workflows/ci.yml/badge.svg)](https://github.com/Magenta-Mause/Cosy-Game-Service/actions/workflows/ci.yml)
 [![Rust](https://img.shields.io/badge/rust-2021_edition-orange.svg?logo=rust)](https://www.rust-lang.org/)
 [![actix-web](https://img.shields.io/badge/actix--web-4.x-000000.svg)](https://actix.rs/)
+[![Status: maintenance](https://img.shields.io/badge/status-maintenance-yellow.svg)](#-project-status-legacy--maintenance-mode)
+
+---
+
+## 🧊 Project status: legacy / maintenance mode
+
+> [!IMPORTANT]
+> **Game data for Cosy has moved to the [Cosy Template Service](https://github.com/Magenta-Mause/Cosy-Template-Service).**
+> The Cosy backend now sources its game catalogue from that service's `GET /v3/games` endpoint (`cosy.templates-api.games-url`) and caches it locally. It no longer calls this service.
+
+This repository is kept **for legacy support**: Cosy backends released before the `/v3/games` migration still resolve game search and artwork through the hosted instance of this service (`cosy.games-api.url`, default `https://cosy-game-api.jannekeipert.de`), and the internal deployment keeps that instance running for them.
+
+What that means in practice:
+
+| | |
+|---|---|
+| ✅ Still done | Security advisories, dependency updates, and fixes to keep the running instance healthy |
+| ❌ Not done | New features, API additions, or behaviour changes |
+| 🆕 New integrations | Use the [Cosy Template Service](https://github.com/Magenta-Mause/Cosy-Template-Service) instead — do not build against this API |
+| 🗄️ End of life | This repository will be **archived** once no supported Cosy backend depends on it |
+
+Everything below documents the service as it exists today, for the people still running or maintaining it.
 
 ---
 
 ## 📖 Overview
 
-**Cosy** (Cost Optimised Server Yard) is a self-hostable platform for hosting and managing game servers. When Cosy displays a game — for example to pick a server template or render a nice header image — it needs consistent game metadata and artwork. Rather than talking to third-party game databases directly, Cosy delegates that to this service.
+**Cosy** (Cost Optimised Server Yard) is a self-hostable platform for hosting and managing game servers. When Cosy displays a game — for example to pick a server template or render a nice header image — it needs consistent game metadata and artwork. Rather than talking to third-party game databases directly, Cosy delegated that to this service — a role now filled by the [Cosy Template Service](https://github.com/Magenta-Mause/Cosy-Template-Service) for current backends (see [Project status](#-project-status-legacy--maintenance-mode)).
 
 **Cosy Game Service** is a thin, self-contained Rust microservice that:
 
@@ -35,6 +57,7 @@ Some functionality is adapted from the [`steamgriddb_api`](https://crates.io/cra
 |------------|-------------|
 | [Cosy](https://github.com/Magenta-Mause/Cosy) | The main Cosy project / download repo |
 | [Cosy-Backend](https://github.com/Magenta-Mause/Cosy-Backend) | Core orchestration engine (Spring Boot) |
+| [Cosy-Template-Service](https://github.com/Magenta-Mause/Cosy-Template-Service) | **Successor for game data** — serves templates and the game catalogue (`/v3/games`) |
 | [Cosy-Frontend](https://github.com/Magenta-Mause/Cosy-Frontend) | Web frontend |
 | [Cosy-Docs](https://github.com/Magenta-Mause/Cosy-Docs) | Official Cosy documentation |
 
@@ -250,6 +273,7 @@ CI (see [`.github/workflows/ci.yml`](.github/workflows/ci.yml)) runs `fmt`, `cli
 - **Docker** — a multi-stage [`Dockerfile`](docker/Dockerfile) produces a slim `debian:bookworm-slim` runtime image. A [`docker-compose.yaml`](docker/docker-compose.yaml) is provided for local/single-host use.
 - **Kubernetes** — manifests under [`argo/`](argo/) define a `Deployment`, `Service`, and `Ingress` (namespace `cosy`). The image is published to GHCR (`ghcr.io/magenta-mause/cosy-gameapi`) by the [release workflow](.github/workflows/release.yml) on version tags.
 - The API key is injected via the `COSY_GAMEAPI_SGDB_API_KEY` environment variable (sourced from a Kubernetes secret in the Argo manifests).
+- **Legacy hosted instance** — `https://cosy-game-api.jannekeipert.de` is the deployment that pre-`/v3/games` Cosy backends still call. Its Argo `Application` lives in [Cosy-Internal-Deployment](https://github.com/Magenta-Mause/Cosy-Internal-Deployment) and is retained deliberately; see [Project status](#-project-status-legacy--maintenance-mode) before removing it.
 
 ---
 
@@ -261,9 +285,9 @@ Broader Cosy documentation lives in [**Cosy-Docs**](https://github.com/Magenta-M
 
 ## 🤝 Contributing
 
-Contributions are welcome! Cosy's org-wide community health files and contribution guidelines live in the [**Magenta-Mause/.github**](https://github.com/Magenta-Mause/.github) repository.
+This repository is in [maintenance mode](#-project-status-legacy--maintenance-mode): bug fixes and dependency/security updates are welcome, new features are not — please take those to the [Cosy Template Service](https://github.com/Magenta-Mause/Cosy-Template-Service). Cosy's org-wide community health files and contribution guidelines live in the [**Magenta-Mause/.github**](https://github.com/Magenta-Mause/.github) repository.
 
-- 🐛 **Report a bug** or 💡 **request a feature**: open an [issue](https://github.com/Magenta-Mause/Cosy-Game-Service/issues).
+- 🐛 **Report a bug**: open an [issue](https://github.com/Magenta-Mause/Cosy-Game-Service/issues).
 - 🔧 **Development setup**: see [Getting Started](#-getting-started) and [Development](#️-development) above.
 
 Before opening a PR, please run `cargo fmt`, `cargo clippy`, and `cargo test` locally.
