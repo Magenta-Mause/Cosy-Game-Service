@@ -1,19 +1,34 @@
+# This service is in legacy/maintenance mode (see README "Project status"):
+# it is still deployed for Cosy backends released before the template-service
+# /v3/games migration, so it keeps getting security and dependency updates —
+# but no feature work, and no churn from breaking upgrades. Hence: monthly
+# grouped updates, majors ignored, and API-breaking bumps pinned below.
 version: 2
 updates:
   - package-ecosystem: "cargo"
     directory: "/"
     schedule:
-      interval: "weekly"
+      interval: "monthly"
     open-pull-requests-limit: 5
     groups:
       cargo-dependencies:
         patterns:
           - "*"
+    ignore:
+      # reqwest 0.13 is an API-breaking release (RequestBuilder::query removed,
+      # Response::text signature changed) and would need a code migration that
+      # is not worth it for a service in maintenance mode. Held at 0.12.x, which
+      # still receives fixes. Revisit only if 0.12 is deprecated or a security
+      # advisory lands against it.
+      - dependency-name: "reqwest"
+        versions: [">=0.13.0"]
+      - dependency-name: "*"
+        update-types: ["version-update:semver-major"]
 
   - package-ecosystem: "docker"
     directory: "/docker"
     schedule:
-      interval: "weekly"
+      interval: "monthly"
     open-pull-requests-limit: 5
     groups:
       docker-dependencies:
@@ -23,7 +38,7 @@ updates:
   - package-ecosystem: "github-actions"
     directory: "/"
     schedule:
-      interval: "weekly"
+      interval: "monthly"
     open-pull-requests-limit: 5
     groups:
       github-actions-dependencies:
