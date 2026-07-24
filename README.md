@@ -130,7 +130,7 @@ All responses use a common JSON envelope. On success:
 On error:
 
 ```jsonc
-{ "status": false, "timestamp": 0, "message": "..." }
+{ "success": false, "timestamp": 0, "message": "..." }
 ```
 
 ### `GET /games` — search games
