@@ -1,12 +1,15 @@
 # 🎮 Cosy Game Service
 
-> A blazingly-fast Rust microservice that wraps the [SteamGridDB](https://www.steamgriddb.com/) game database API for the **Cosy** platform, exposing a small, focused HTTP API for game search and artwork (assets).
+> A small Rust microservice that wraps the [SteamGridDB](https://www.steamgriddb.com/) game database API for the **Cosy** platform, exposing a focused HTTP API for game search and artwork (assets).
 
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 [![CI](https://github.com/Magenta-Mause/Cosy-Game-Service/actions/workflows/ci.yml/badge.svg)](https://github.com/Magenta-Mause/Cosy-Game-Service/actions/workflows/ci.yml)
+[![Release](https://img.shields.io/github/v/release/Magenta-Mause/Cosy-Game-Service?label=release)](https://github.com/Magenta-Mause/Cosy-Game-Service/releases)
 [![Rust](https://img.shields.io/badge/rust-2021_edition-orange.svg?logo=rust)](https://www.rust-lang.org/)
 [![actix-web](https://img.shields.io/badge/actix--web-4.x-000000.svg)](https://actix.rs/)
 [![Status: maintenance](https://img.shields.io/badge/status-maintenance-yellow.svg)](#-project-status-legacy--maintenance-mode)
+
+**Changelog:** see [Releases](https://github.com/Magenta-Mause/Cosy-Game-Service/releases).
 
 ---
 
@@ -83,17 +86,24 @@ cd Cosy-Game-Service
 
 ### ⚙️ Configuration
 
-The service is configured entirely through environment variables. Copy the provided example file and fill in your key:
-
-```bash
-cp .env.example .env
-```
+The service is configured entirely through environment variables.
 
 | Variable | Required | Description |
 |----------|----------|-------------|
 | `COSY_GAMEAPI_SGDB_API_KEY` | ✅ Yes | Your SteamGridDB API key. Sent as a Bearer token to the upstream API. The service exits on startup if this is not set. |
 
+Copy the provided example file and fill in your key:
+
+```bash
+cp .env.example docker/.env   # Compose reads .env from next to the compose file
+```
+
+> [!NOTE]
+> The binary does **not** load `.env` itself — there is no `dotenv`/`dotenvy` dependency in [`Cargo.toml`](Cargo.toml), so `cargo run` will not pick the file up. It is read only by Docker Compose, and only from the `docker/` directory (Compose resolves `.env` relative to the compose file, which is its project directory). For a local `cargo run`, export the variable instead — see [Quick Start](#quick-start) below.
+
 > The HTTP server binds to `0.0.0.0:8080` (this address and port are currently fixed in the source).
+
+<a id="quick-start"></a>
 
 ### ▶️ Quick Start
 
@@ -104,7 +114,14 @@ export COSY_GAMEAPI_SGDB_API_KEY=your_key_here
 cargo run
 ```
 
-**Option B — run with Docker Compose** (reads `COSY_GAMEAPI_SGDB_API_KEY` from your environment or a `.env` file):
+`cargo run` does not auto-load `.env`. Either `export` the variable as above, or source the file into your shell first:
+
+```bash
+set -a; source docker/.env; set +a
+cargo run
+```
+
+**Option B — run with Docker Compose** (reads `COSY_GAMEAPI_SGDB_API_KEY` from your environment, or from `docker/.env`):
 
 ```bash
 cd docker
@@ -147,14 +164,16 @@ Cosy-Game-Service/
 All responses use a common JSON envelope. On success:
 
 ```jsonc
-{ "success": true, "timestamp": 0, "data": { /* ... */ } }
+{ "success": true, "timestamp": 1753370000000, "data": { /* ... */ } }
 ```
 
 On error:
 
 ```jsonc
-{ "success": false, "timestamp": 0, "message": "..." }
+{ "success": false, "timestamp": 1753370000000, "message": "..." }
 ```
+
+`timestamp` is Unix epoch milliseconds, stamped on every response as it is serialised.
 
 ### `GET /games` — search games
 
@@ -184,6 +203,7 @@ Search for games by name (or a fragment of a name).
 }
 ```
 
+**`400 Bad Request`** — returned if `query` is missing, or if `limit`/`offset`/`include_hero`/`include_logo` cannot be parsed into their types.
 **`500 Internal Server Error`** — returned if the upstream search fails.
 
 ### `GET /game` — fetch a single game
@@ -197,6 +217,7 @@ Fetch one game by its SteamGridDB ID.
 | `include_logo` | boolean | `false` | If `true`, attempt to attach a logo image URL. |
 
 **`200 OK`** — a single game object (`{ id, name, hero_url?, logo_url? }`) inside the standard envelope.
+**`400 Bad Request`** — returned if `id` is missing or is not a valid integer, or if `include_hero`/`include_logo` cannot be parsed.
 **`404 Not Found`** — returned if the game cannot be fetched.
 
 ### `GET /assets/{game_id}` — fetch artwork for a game
@@ -229,6 +250,8 @@ Fetch assets (images) for a specific game by its ID.
 
 ---
 
+<a id="development"></a>
+
 ## 🛠️ Development
 
 ### Available commands
@@ -251,7 +274,7 @@ Fetch assets (images) for a specific game by its ID.
 4. Run the tests: `cargo test`.
 5. Open a pull request against `main`.
 
-CI (see [`.github/workflows/ci.yml`](.github/workflows/ci.yml)) runs `fmt`, `clippy`, the test suite, and `cargo audit` on every push and pull request, so running these locally first avoids surprises.
+CI (see [`.github/workflows/ci.yml`](.github/workflows/ci.yml)) runs `fmt`, `clippy`, the test suite, and `cargo audit` (currently non-blocking — it runs as `cargo audit || true`, so advisories are reported but never fail the build) on every push and pull request, so running these locally first avoids surprises.
 
 ### Key dependencies
 
@@ -271,7 +294,8 @@ CI (see [`.github/workflows/ci.yml`](.github/workflows/ci.yml)) runs `fmt`, `cli
 ## 🚢 Deployment
 
 - **Docker** — a multi-stage [`Dockerfile`](docker/Dockerfile) produces a slim `debian:bookworm-slim` runtime image. A [`docker-compose.yaml`](docker/docker-compose.yaml) is provided for local/single-host use.
-- **Kubernetes** — manifests under [`argo/`](argo/) define a `Deployment`, `Service`, and `Ingress` (namespace `cosy`). The image is published to GHCR (`ghcr.io/magenta-mause/cosy-gameapi`) by the [release workflow](.github/workflows/release.yml) on version tags.
+- **Kubernetes** — manifests under [`argo/`](argo/) define a `Deployment`, `Service`, and `Ingress` (namespace `cosy`).
+- **Container image — note the naming drift.** The `argo/` manifests pin `ghcr.io/magenta-mause/cosy-gameapi:v0.0.6`; note the [release workflow](.github/workflows/release.yml) publishes to `ghcr.io/magenta-mause/cosy-game-service` instead (it sets `images: ghcr.io/${{ github.repository }}`) — the two names have drifted. A release build therefore pushes to a repository nothing deploys from, and the `cosy-gameapi` images that *are* deployed were not produced by that workflow.
 - The API key is injected via the `COSY_GAMEAPI_SGDB_API_KEY` environment variable (sourced from a Kubernetes secret in the Argo manifests).
 - **Legacy hosted instance** — `https://cosy-game-api.jannekeipert.de` is the deployment that pre-`/v3/games` Cosy backends still call. Its Argo `Application` lives in [Cosy-Internal-Deployment](https://github.com/Magenta-Mause/Cosy-Internal-Deployment) and is retained deliberately; see [Project status](#-project-status-legacy--maintenance-mode) before removing it.
 
@@ -288,7 +312,7 @@ Broader Cosy documentation lives in [**Cosy-Docs**](https://github.com/Magenta-M
 This repository is in [maintenance mode](#-project-status-legacy--maintenance-mode): bug fixes and dependency/security updates are welcome, new features are not — please take those to the [Cosy Template Service](https://github.com/Magenta-Mause/Cosy-Template-Service). Cosy's org-wide community health files and contribution guidelines live in the [**Magenta-Mause/.github**](https://github.com/Magenta-Mause/.github) repository.
 
 - 🐛 **Report a bug**: open an [issue](https://github.com/Magenta-Mause/Cosy-Game-Service/issues).
-- 🔧 **Development setup**: see [Getting Started](#-getting-started) and [Development](#️-development) above.
+- 🔧 **Development setup**: see [Getting Started](#-getting-started) and [Development](#development) above.
 
 Before opening a PR, please run `cargo fmt`, `cargo clippy`, and `cargo test` locally.
 
