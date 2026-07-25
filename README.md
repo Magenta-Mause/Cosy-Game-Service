@@ -175,6 +175,9 @@ On error:
 
 `timestamp` is Unix epoch milliseconds, stamped on every response as it is serialised.
 
+> [!NOTE]
+> Requests rejected before a handler runs do **not** use this envelope. The service registers no custom error handlers, so actix's extractors answer with their own plain-text errors: `400 Bad Request` for missing or unparsable query parameters, and `404 Not Found` for a path segment that cannot be parsed (e.g. a non-numeric `game_id`).
+
 ### `GET /games` — search games
 
 Search for games by name (or a fragment of a name).
@@ -246,6 +249,8 @@ Fetch assets (images) for a specific game by its ID.
 }
 ```
 
+**`400 Bad Request`** — returned if `limit`/`offset` cannot be parsed into their types.
+**`404 Not Found`** — returned if `game_id` is not a valid integer.
 **`500 Internal Server Error`** — returned if fetching assets fails.
 
 ---
