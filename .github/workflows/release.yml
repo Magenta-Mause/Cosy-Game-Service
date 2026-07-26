@@ -31,7 +31,12 @@ jobs:
         id: meta
         uses: docker/metadata-action@v6
         with:
-          images: ghcr.io/${{ github.repository }}
+          # Pinned deliberately — do NOT replace with ${{ github.repository }}.
+          # This repository was renamed Cosy-GameApi -> Cosy-Game-Service, so
+          # that context variable now resolves to `cosy-game-service`, while
+          # argo/ and the live deployment run `cosy-gameapi`.
+          # See Magenta-Mause/Cosy#79.
+          images: ghcr.io/magenta-mause/cosy-gameapi
 
       - name: Build and push Docker image
         uses: docker/build-push-action@v7
