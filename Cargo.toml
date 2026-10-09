@@ -7,7 +7,9 @@ edition = "2021"
 actix-web = "4.14.0"
 chrono = "0.4.45"
 futures = "0.3.33"
-prometheus = { version = "0.14.0", default-features = false }
+opentelemetry = { version = "0.33.0", default-features = false, features = ["metrics"] }
+opentelemetry-otlp = { version = "0.33.0", default-features = false, features = ["metrics", "http-proto", "reqwest-blocking-client"] }
+opentelemetry_sdk = { version = "0.33.0", default-features = false, features = ["metrics"] }
 reqwest = "0.12.24"
 serde = { version = "1.0.229", features = ["derive"] }
 serde_json = "1.0.151"
@@ -16,3 +18,4 @@ tokio = { version = "1.50.0", features = ["rt-multi-thread", "macros"] }
 
 [dev-dependencies]
 httpmock = "0.8"
+opentelemetry_sdk = { version = "0.33.0", features = ["testing"] }

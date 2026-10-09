@@ -4,7 +4,7 @@
 use std::{
     collections::{hash_map::RandomState, HashMap},
     hash::BuildHasher,
-    sync::Mutex,
+    sync::{Arc, Mutex},
     time::{Duration, Instant},
 };
 
@@ -16,10 +16,17 @@ use actix_web::{
     web::Data,
     Error,
 };
-use prometheus::{Encoder, IntCounterVec, IntGaugeVec, Opts, Registry, TextEncoder};
+use opentelemetry::{
+    metrics::{Counter, Meter, MeterProvider},
+    KeyValue,
+};
+use opentelemetry_otlp::MetricExporter;
+use opentelemetry_sdk::{metrics::SdkMeterProvider, Resource};
 
 /// Excluded from the usage metrics.
 pub const HEALTH_PATH: &str = "/healthz";
+
+const SERVICE_NAME: &str = "cosy-gameapi";
 
 /// Groups every request that hit no registered route, so scanners probing
 /// random paths cannot create one series per path.
@@ -38,52 +45,81 @@ const CLIENT_WINDOWS: [(&str, Duration); 3] = [
 ];
 
 pub struct UsageMetrics {
-    registry: Registry,
-    requests: IntCounterVec,
-    unique_clients: IntGaugeVec,
-    /// Random per process: caller addresses are only ever held as a seeded
-    /// hash, never stored or exported.
-    hasher: RandomState,
-    /// route -> caller hash -> last request
-    last_seen: Mutex<HashMap<String, HashMap<u64, Instant>>>,
+    requests: Counter<u64>,
+    clients: Arc<ClientTracker>,
+    /// Dropping the provider stops the export, so it lives as long as the metrics.
+    _provider: Option<SdkMeterProvider>,
 }
 
 impl UsageMetrics {
-    pub fn new() -> Result<Self, prometheus::Error> {
-        let registry = Registry::new();
-        let requests = IntCounterVec::new(
-            Opts::new(
-                "cosy_gameapi_http_requests_total",
-                "HTTP requests by route and status code. Kubernetes probes are not counted.",
-            ),
-            &["route", "status"],
-        )?;
-        let unique_clients = IntGaugeVec::new(
-            Opts::new(
-                "cosy_gameapi_unique_clients",
-                "Distinct callers per route within the look-back window. Counted in memory, so it starts from zero after a restart.",
-            ),
-            &["route", "window"],
-        )?;
-        registry.register(Box::new(requests.clone()))?;
-        registry.register(Box::new(unique_clients.clone()))?;
+    /// Returns metrics that are pushed over OTLP/HTTP. The exporter is
+    /// configured through the standard `OTEL_EXPORTER_OTLP_*` environment
+    /// variables; without an endpoint nothing is exported.
+    pub fn start() -> Result<Self, Box<dyn std::error::Error>> {
+        let endpoint_set = [
+            "OTEL_EXPORTER_OTLP_ENDPOINT",
+            "OTEL_EXPORTER_OTLP_METRICS_ENDPOINT",
+        ]
+        .iter()
+        .any(|name| std::env::var(name).is_ok_and(|value| !value.is_empty()));
+        if !endpoint_set {
+            let meter = opentelemetry::metrics::noop::NoopMeterProvider::new().meter(SERVICE_NAME);
+            return Ok(Self::new(&meter));
+        }
 
-        Ok(Self {
-            registry,
+        // OTEL_SERVICE_NAME and OTEL_RESOURCE_ATTRIBUTES are picked up by the
+        // default resource and take precedence over the default service name.
+        let mut resource = Resource::builder();
+        if std::env::var("OTEL_SERVICE_NAME").is_err() {
+            resource = resource.with_service_name(SERVICE_NAME);
+        }
+        let provider = SdkMeterProvider::builder()
+            .with_resource(resource.build())
+            .with_periodic_exporter(MetricExporter::builder().with_http().build()?)
+            .build();
+
+        let mut metrics = Self::new(&provider.meter(SERVICE_NAME));
+        metrics._provider = Some(provider);
+        Ok(metrics)
+    }
+
+    /// Returns metrics that report through the given meter.
+    pub fn new(meter: &Meter) -> Self {
+        let requests = meter
+            .u64_counter("cosy_gameapi_http_requests")
+            .with_description(
+                "HTTP requests by route and status code. Kubernetes probes are not counted.",
+            )
+            .build();
+
+        let clients = Arc::new(ClientTracker::default());
+        let observed = clients.clone();
+        meter
+            .u64_observable_gauge("cosy_gameapi_unique_clients")
+            .with_description("Distinct callers per route within the look-back window. Counted in memory, so it starts from zero after a restart.")
+            .with_callback(move |observer| {
+                for (route, window, count) in observed.counts(Instant::now()) {
+                    observer.observe(
+                        count,
+                        &[KeyValue::new("route", route), KeyValue::new("window", window)],
+                    );
+                }
+            })
+            .build();
+
+        Self {
             requests,
-            unique_clients,
-            hasher: RandomState::new(),
-            last_seen: Mutex::new(HashMap::new()),
-        })
+            clients,
+            _provider: None,
+        }
     }
 
     /// Makes the given routes report zero from the start, so a route nobody
     /// calls shows up as 0 rather than as missing data.
     pub fn track(&self, routes: &[&str]) {
-        let mut last_seen = self.last_seen.lock().unwrap();
         for route in routes {
-            self.requests.with_label_values(&[route, "200"]);
-            last_seen.entry(route.to_string()).or_default();
+            self.requests.add(0, &request_attributes(route, 200));
+            self.clients.track(route);
         }
     }
 
@@ -97,16 +133,55 @@ impl UsageMetrics {
         if route == Some(HEALTH_PATH) {
             return;
         }
-        self.requests
-            .with_label_values(&[route.unwrap_or(UNMATCHED_ROUTE), &status.to_string()])
-            .inc();
+        self.requests.add(
+            1,
+            &request_attributes(route.unwrap_or(UNMATCHED_ROUTE), status),
+        );
+        if let (Some(route), Some(client)) = (route, client) {
+            self.clients.seen(route, client, now);
+        }
+    }
 
-        let (Some(route), Some(client)) = (route, client) else {
-            return;
-        };
+    /// Distinct callers as `(route, window, count)` for every look-back window.
+    pub fn unique_clients_at(&self, now: Instant) -> Vec<(String, &'static str, u64)> {
+        self.clients.counts(now)
+    }
+}
+
+fn request_attributes(route: &str, status: u16) -> [KeyValue; 2] {
+    [
+        KeyValue::new("route", route.to_owned()),
+        KeyValue::new("status", status.to_string()),
+    ]
+}
+
+struct ClientTracker {
+    /// Random per process: caller addresses are only ever held as a seeded
+    /// hash, never stored or exported.
+    hasher: RandomState,
+    /// route -> caller hash -> last request
+    last_seen: Mutex<HashMap<String, HashMap<u64, Instant>>>,
+}
+
+impl Default for ClientTracker {
+    fn default() -> Self {
+        Self {
+            hasher: RandomState::new(),
+            last_seen: Mutex::new(HashMap::new()),
+        }
+    }
+}
+
+impl ClientTracker {
+    fn track(&self, route: &str) {
+        let mut last_seen = self.last_seen.lock().unwrap();
+        last_seen.entry(route.to_owned()).or_default();
+    }
+
+    fn seen(&self, route: &str, client: &str, now: Instant) {
         let key = self.hasher.hash_one(client);
         let mut last_seen = self.last_seen.lock().unwrap();
-        let clients = last_seen.entry(route.to_string()).or_default();
+        let clients = last_seen.entry(route.to_owned()).or_default();
         if !clients.contains_key(&key) && clients.len() >= MAX_CLIENTS_PER_ROUTE {
             prune(clients, now);
             if clients.len() >= MAX_CLIENTS_PER_ROUTE {
@@ -116,32 +191,20 @@ impl UsageMetrics {
         clients.insert(key, now);
     }
 
-    /// Renders all metrics in the Prometheus text format.
-    pub fn render(&self) -> String {
-        self.render_at(Instant::now())
-    }
-
-    pub fn render_at(&self, now: Instant) -> String {
-        {
-            let mut last_seen = self.last_seen.lock().unwrap();
-            for (route, clients) in last_seen.iter_mut() {
-                prune(clients, now);
-                for (label, window) in CLIENT_WINDOWS {
-                    let count = clients
-                        .values()
-                        .filter(|last| now.saturating_duration_since(**last) <= window)
-                        .count();
-                    self.unique_clients
-                        .with_label_values(&[route.as_str(), label])
-                        .set(count as i64);
-                }
+    fn counts(&self, now: Instant) -> Vec<(String, &'static str, u64)> {
+        let mut last_seen = self.last_seen.lock().unwrap();
+        let mut counts = Vec::with_capacity(last_seen.len() * CLIENT_WINDOWS.len());
+        for (route, clients) in last_seen.iter_mut() {
+            prune(clients, now);
+            for (label, window) in CLIENT_WINDOWS {
+                let count = clients
+                    .values()
+                    .filter(|last| now.saturating_duration_since(**last) <= window)
+                    .count();
+                counts.push((route.clone(), label, count as u64));
             }
         }
-
-        let mut buffer = Vec::new();
-        // Encoding into a Vec cannot fail.
-        let _ = TextEncoder::new().encode(&self.registry.gather(), &mut buffer);
-        String::from_utf8(buffer).unwrap_or_default()
+        counts
     }
 }
 

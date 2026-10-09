@@ -3,19 +3,12 @@ kind: Service
 metadata:
   name: cosy-gameapi
   namespace: cosy
-  labels:
-    app: cosy-gameapi
 spec:
   selector:
     app: cosy-gameapi
   ports:
-    - name: http
-      port: 80        # inside the cluster
+    - port: 80        # inside the cluster
       targetPort: 8080
-      protocol: TCP
-    - name: metrics
-      port: 9090
-      targetPort: 9090
       protocol: TCP
   type: ClusterIP
 

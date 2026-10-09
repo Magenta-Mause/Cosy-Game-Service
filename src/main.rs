@@ -13,43 +13,23 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let global_state = web::Data::new(GlobalState::new(&auth_key)?);
 
-    let usage = web::Data::new(UsageMetrics::new()?);
+    let usage = web::Data::new(UsageMetrics::start()?);
     usage.track(&["/assets/{game_id}", "/game", "/games"]);
 
-    let api = {
-        let usage = usage.clone();
-        HttpServer::new(move || {
-            App::new()
-                .wrap(from_fn(track_usage))
-                .service(get_assets_by_id)
-                .service(get_game)
-                .service(search_games)
-                .route(HEALTH_PATH, web::get().to(HttpResponse::Ok))
-                .app_data(global_state.clone())
-                .app_data(usage.clone())
-        })
-        .bind(("0.0.0.0", 8080))?
-        .run()
-    };
-
-    // Metrics get their own port so the public ingress never exposes them.
-    let metrics = HttpServer::new(move || {
-        let usage = usage.clone();
-        App::new().route(
-            "/metrics",
-            web::get().to(move || {
-                let usage = usage.clone();
-                async move { HttpResponse::Ok().body(usage.render()) }
-            }),
-        )
+    HttpServer::new(move || {
+        App::new()
+            .wrap(from_fn(track_usage))
+            .service(get_assets_by_id)
+            .service(get_game)
+            .service(search_games)
+            .route(HEALTH_PATH, web::get().to(HttpResponse::Ok))
+            .app_data(global_state.clone())
+            .app_data(usage.clone())
     })
-    .workers(1)
-    .bind(("0.0.0.0", 9090))?
-    .run();
-
-    futures::future::try_join(api, metrics)
-        .await
-        .map_err(|e| format!("failed to run server: {}", e))?;
+    .bind(("0.0.0.0", 8080))?
+    .run()
+    .await
+    .map_err(|e| format!("failed to run server: {}", e))?;
 
     Ok(())
 }
