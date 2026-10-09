@@ -101,7 +101,7 @@ cp .env.example docker/.env   # Compose reads .env from next to the compose file
 > [!NOTE]
 > The binary does **not** load `.env` itself — there is no `dotenv`/`dotenvy` dependency in [`Cargo.toml`](Cargo.toml), so `cargo run` will not pick the file up. It is read only by Docker Compose, and only from the `docker/` directory (Compose resolves `.env` relative to the compose file, which is its project directory). For a local `cargo run`, export the variable instead — see [Quick Start](#quick-start) below.
 
-> The HTTP server binds to `0.0.0.0:8080` (this address and port are currently fixed in the source).
+> The HTTP server binds to `0.0.0.0:8080`, and a second listener on `0.0.0.0:9090` serves the [usage metrics](#usage-metrics) (both addresses and ports are currently fixed in the source).
 
 <a id="quick-start"></a>
 
@@ -147,6 +147,7 @@ Cosy-Game-Service/
 │   ├── lib.rs                     # Library root, re-exports
 │   ├── global_state.rs            # Shared state: SteamGridDB + reqwest clients
 │   ├── model/                     # Request/response models (Game, Asset, Response envelope, SteamGridDB DTOs)
+│   ├── metrics.rs                 # Usage metrics (requests and distinct callers per route)
 │   ├── routes/                    # HTTP handlers (games, assets)
 │   └── services/                  # SteamGridDB service layer
 ├── tests/                         # Integration tests
@@ -256,6 +257,18 @@ Fetch assets (images) for a specific game by its ID.
 ---
 
 <a id="development"></a>
+
+<a id="usage-metrics"></a>
+### `GET /healthz` and usage metrics
+
+`GET /healthz` returns `200` with an empty body.
+
+To decide when this legacy service can be switched off, it counts its callers. The metrics are served in the Prometheus format at `/metrics` on port `9090`, so the public port never exposes them.
+
+| Metric | Description |
+|--------|-------------|
+| `cosy_gameapi_http_requests_total{route, status}` | Requests per route and status code. Requests that match no route share `route="unmatched"`. Kubernetes probes and `/healthz` are not counted. |
+| `cosy_gameapi_unique_clients{route, window}` | Distinct callers per route in the last `1d`, `7d` and `30d`. Callers are told apart by a hash of their address that is seeded per process; the address itself is neither stored nor exported. The count is held in memory and starts from zero after a restart. |
 
 ## 🛠️ Development
 

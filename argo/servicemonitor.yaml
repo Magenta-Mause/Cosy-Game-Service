@@ -1,0 +1,15 @@
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: cosy-gameapi
+  namespace: cosy
+  labels:
+    release: prometheus
+spec:
+  selector:
+    matchLabels:
+      app: cosy-gameapi
+  endpoints:
+    - port: metrics
+      path: /metrics
+      interval: 60s

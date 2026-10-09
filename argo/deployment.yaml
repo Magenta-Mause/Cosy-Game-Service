@@ -18,6 +18,9 @@ spec:
           image: ghcr.io/magenta-mause/cosy-gameapi:v0.0.6
           ports:
             - containerPort: 8080
+              name: http
+            - containerPort: 9090
+              name: metrics
           env:
             - name: COSY_GAMEAPI_SGDB_API_KEY
               valueFrom:
