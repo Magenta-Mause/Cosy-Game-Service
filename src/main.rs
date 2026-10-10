@@ -1,7 +1,7 @@
-use actix_web::{middleware::from_fn, web, App, HttpResponse, HttpServer};
+use actix_web::{middleware::from_fn, web, App, HttpServer};
 use cosy_gameapi::{
-    metrics::{track_usage, UsageMetrics, HEALTH_PATH},
-    routes::{get_assets_by_id, get_game, search_games},
+    metrics::{track_usage, UsageMetrics},
+    routes::{configure, API_ROUTES, HEALTH_ROUTE},
     GlobalState,
 };
 
@@ -13,23 +13,27 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let global_state = web::Data::new(GlobalState::new(&auth_key)?);
 
-    let usage = web::Data::new(UsageMetrics::start()?);
-    usage.track(&["/assets/{game_id}", "/game", "/games"]);
+    let usage = web::Data::new(UsageMetrics::start(&[HEALTH_ROUTE])?);
+    usage.track(&API_ROUTES);
 
-    HttpServer::new(move || {
-        App::new()
-            .wrap(from_fn(track_usage))
-            .service(get_assets_by_id)
-            .service(get_game)
-            .service(search_games)
-            .route(HEALTH_PATH, web::get().to(HttpResponse::Ok))
-            .app_data(global_state.clone())
-            .app_data(usage.clone())
-    })
-    .bind(("0.0.0.0", 8080))?
-    .run()
-    .await
-    .map_err(|e| format!("failed to run server: {}", e))?;
+    let server = {
+        let usage = usage.clone();
+        HttpServer::new(move || {
+            App::new()
+                .wrap(from_fn(track_usage))
+                .configure(configure)
+                .app_data(global_state.clone())
+                .app_data(usage.clone())
+        })
+        .bind(("0.0.0.0", 8080))?
+        .run()
+    };
+
+    // The server returns once SIGINT/SIGTERM has stopped it. Push the metrics
+    // counted since the last export so they are not lost with the process.
+    let result = server.await;
+    usage.shutdown();
+    result.map_err(|e| format!("failed to run server: {}", e))?;
 
     Ok(())
 }

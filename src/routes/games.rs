@@ -1,5 +1,4 @@
 use actix_web::{
-    get,
     http::StatusCode,
     web::{Data, Query},
 };
@@ -27,7 +26,6 @@ pub struct GetGameQuery {
     pub include_logo: Option<bool>,
 }
 
-#[get("/game")]
 pub async fn get_game(
     global_data: Data<GlobalState>,
     query: Query<GetGameQuery>,
@@ -59,7 +57,6 @@ pub async fn get_game(
     Response::success(game)
 }
 
-#[get("/games")]
 pub async fn search_games(
     global_data: Data<GlobalState>,
     query: Query<SearchGamesQuery>,
