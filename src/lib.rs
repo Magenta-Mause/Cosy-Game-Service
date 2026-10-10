@@ -1,4 +1,5 @@
 mod global_state;
+pub mod metrics;
 mod model;
 pub mod services;
 

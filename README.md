@@ -143,11 +143,12 @@ You should receive a JSON object with `success: true` and a `data.games` array.
 ```
 Cosy-Game-Service/
 ├── src/
-│   ├── main.rs                    # Entrypoint: reads API key, binds 0.0.0.0:8080, registers routes
+│   ├── main.rs                    # Entrypoint: reads API key, binds 0.0.0.0:8080, starts the server
 │   ├── lib.rs                     # Library root, re-exports
 │   ├── global_state.rs            # Shared state: SteamGridDB + reqwest clients
+│   ├── metrics.rs                 # Usage metrics (requests per route) and request log
 │   ├── model/                     # Request/response models (Game, Asset, Response envelope, SteamGridDB DTOs)
-│   ├── routes/                    # HTTP handlers (games, assets)
+│   ├── routes/                    # HTTP handlers (games, assets) and route registration
 │   └── services/                  # SteamGridDB service layer
 ├── tests/                         # Integration tests
 ├── docker/                        # Dockerfile + docker-compose.yaml
@@ -256,6 +257,23 @@ Fetch assets (images) for a specific game by its ID.
 ---
 
 <a id="development"></a>
+
+<a id="usage-metrics"></a>
+### `GET /healthz` and usage metrics
+
+`GET /healthz` returns `200` with an empty body.
+
+To decide when this legacy service can be switched off, it counts its requests and pushes the result over OTLP/HTTP (OpenTelemetry). The exporter is configured through the standard `OTEL_*` environment variables, e.g. `OTEL_EXPORTER_OTLP_ENDPOINT=http://localhost:4318`. Nothing is exported while no endpoint is set.
+
+| Metric | Description |
+|--------|-------------|
+| `cosy_gameapi_http_requests{route, status}` | Counter of requests per route and status code. Requests that match no route share `route="unmatched"`. Kubernetes probes and `/healthz` are not counted. Prometheus-compatible backends store it as `cosy_gameapi_http_requests_total`. |
+
+The number of distinct callers is not a metric. It can be read from the request log: every counted request writes one line to stdout with the caller address.
+
+```text
+request method=GET route="/games" status=200 client=203.0.113.9 agent="ReactorNetty/1.2.3"
+```
 
 ## 🛠️ Development
 

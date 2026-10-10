@@ -1,5 +1,4 @@
 use actix_web::{
-    get,
     http::StatusCode,
     web::{self, Data, Query},
 };
@@ -16,7 +15,6 @@ pub struct FetchAssetsQuery {
     offset: Option<u32>,
 }
 
-#[get("/assets/{game_id}")]
 pub async fn get_assets_by_id(
     global_data: Data<GlobalState>,
     path: web::Path<usize>,

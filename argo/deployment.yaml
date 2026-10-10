@@ -24,6 +24,16 @@ spec:
                 secretKeyRef:
                   name: cosy-gameapi-secret
                   key: steamgriddb_api_secret
+            - name: POD_NAME
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.name
+            - name: OTEL_EXPORTER_OTLP_ENDPOINT
+              value: http://grafana-k8s-monitoring-alloy-receiver.observability.svc.cluster.local:4318
+            - name: OTEL_SERVICE_NAME
+              value: cosy-gameapi
+            - name: OTEL_RESOURCE_ATTRIBUTES
+              value: service.namespace=cosy,service.instance.id=$(POD_NAME),deployment.environment=production
           resources:
             limits:
               memory: "512Mi"
